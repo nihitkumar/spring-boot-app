@@ -71,18 +71,27 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
           sh """
-            git config --global user.email "nihitkumar39@gmail.com"
-            git config --global user.name "Nihit Kumar"
+            set -e
 
             rm -rf ${MANIFEST_REPO}
             git clone https://${GITHUB_TOKEN}@github.com/${MANIFEST_USER}/${MANIFEST_REPO}.git
 
             cd ${MANIFEST_REPO}
 
-            sed -i "s|replaceImageTag|${BUILD_NUMBER}|g" deployment.yml
+            echo "Before update:"
+            cat deployment.yml
+
+            # 🔥 SAFE & RELIABLE IMAGE UPDATE (FIXED)
+            sed -i "s|image: .*|image: ${DOCKER_IMAGE}|g" deployment.yml
+
+            echo "After update:"
+            cat deployment.yml
+
+            git config user.email "nihitkumar39@gmail.com"
+            git config user.name "Nihit Kumar"
 
             git add deployment.yml
-            git commit -m "Update image tag to ${BUILD_NUMBER}" || echo "No changes"
+            git commit -m "Update image to ${DOCKER_IMAGE}" || echo "No changes to commit"
             git push origin main
           """
         }

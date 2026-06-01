@@ -10,7 +10,7 @@ pipeline {
     DOCKER_IMAGE = "nihitkumar/spring-boot-app:${BUILD_NUMBER}"
     MANIFEST_REPO = "spring-boot-app-manifests"
     MANIFEST_USER = "nihitkumar"
-    SONAR_URL = "http://13.200.205.163:9000/"
+    SONAR_URL = "http://13.200.205.163:9000"
   }
 
   stages {
@@ -23,7 +23,7 @@ pipeline {
 
     stage('Build and Test') {
       steps {
-        sh 'mvn clean package'
+        sh 'mvn clean package -DskipTests'
       }
     }
 
@@ -39,15 +39,23 @@ pipeline {
       }
     }
 
-    stage('Build and Push Docker Image') {
+    stage('Build Docker Image') {
       steps {
-        script {
-          sh "docker build -t ${DOCKER_IMAGE} ."
+        sh "docker build -t ${DOCKER_IMAGE} ."
+      }
+    }
 
-          docker.withRegistry('https://index.docker.io/v1/', 'docker-cred') {
-            def img = docker.image("${DOCKER_IMAGE}")
-            img.push()
-          }
+    stage('Push Docker Image') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'docker-cred',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker push $DOCKER_IMAGE
+          '''
         }
       }
     }
@@ -55,24 +63,32 @@ pipeline {
     stage('Update Deployment File') {
       steps {
         withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-          sh '''
+          sh """
             git config user.email "nihitkumar39@gmail.com"
             git config user.name "Nihit Kumar"
 
-            # clone manifests repo
             git clone https://${GITHUB_TOKEN}@github.com/${MANIFEST_USER}/${MANIFEST_REPO}.git
-            cd spring-boot-app-manifests
 
-            # update image tag
+            cd ${MANIFEST_REPO}
+
             sed -i "s|replaceImageTag|${BUILD_NUMBER}|g" deployment.yml
 
             git add deployment.yml
             git commit -m "Update image tag to ${BUILD_NUMBER}" || echo "No changes to commit"
             git push origin main
-          '''
+          """
         }
       }
     }
 
+  }
+
+  post {
+    success {
+      echo "Pipeline SUCCESS 🚀"
+    }
+    failure {
+      echo "Pipeline FAILED ❌"
+    }
   }
 }

@@ -1,10 +1,5 @@
 pipeline {
-  agent {
-  docker {
-    image 'maven:3.9.6-eclipse-temurin-17'
-    args '-v /var/run/docker.sock:/var/run/docker.sock'
-  }
-}
+  agent any
 
   environment {
     DOCKER_IMAGE = "nihitkumar/spring-boot-app:${BUILD_NUMBER}"
@@ -22,18 +17,28 @@ pipeline {
     }
 
     stage('Build and Test') {
+      agent {
+        docker {
+          image 'maven:3.9.6-eclipse-temurin-17'
+        }
+      }
       steps {
         sh 'mvn clean package -DskipTests'
       }
     }
 
     stage('Static Code Analysis') {
+      agent {
+        docker {
+          image 'maven:3.9.6-eclipse-temurin-17'
+        }
+      }
       steps {
-        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
           sh """
             mvn sonar:sonar \
-              -Dsonar.login=$SONAR_AUTH_TOKEN \
-              -Dsonar.host.url=${SONAR_URL}
+              -Dsonar.host.url=${SONAR_URL} \
+              -Dsonar.token=${SONAR_TOKEN}
           """
         }
       }
@@ -41,7 +46,9 @@ pipeline {
 
     stage('Build Docker Image') {
       steps {
-        sh "docker build -t ${DOCKER_IMAGE} ."
+        sh """
+          docker build -t ${DOCKER_IMAGE} .
+        """
       }
     }
 
@@ -52,10 +59,10 @@ pipeline {
           usernameVariable: 'DOCKER_USER',
           passwordVariable: 'DOCKER_PASS'
         )]) {
-          sh '''
+          sh """
             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-            docker push $DOCKER_IMAGE
-          '''
+            docker push ${DOCKER_IMAGE}
+          """
         }
       }
     }
@@ -64,9 +71,10 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
           sh """
-            git config user.email "nihitkumar39@gmail.com"
-            git config user.name "Nihit Kumar"
+            git config --global user.email "nihitkumar39@gmail.com"
+            git config --global user.name "Nihit Kumar"
 
+            rm -rf ${MANIFEST_REPO}
             git clone https://${GITHUB_TOKEN}@github.com/${MANIFEST_USER}/${MANIFEST_REPO}.git
 
             cd ${MANIFEST_REPO}
@@ -74,19 +82,19 @@ pipeline {
             sed -i "s|replaceImageTag|${BUILD_NUMBER}|g" deployment.yml
 
             git add deployment.yml
-            git commit -m "Update image tag to ${BUILD_NUMBER}" || echo "No changes to commit"
+            git commit -m "Update image tag to ${BUILD_NUMBER}" || echo "No changes"
             git push origin main
           """
         }
       }
     }
-
   }
 
   post {
     success {
       echo "Pipeline SUCCESS 🚀"
     }
+
     failure {
       echo "Pipeline FAILED ❌"
     }
